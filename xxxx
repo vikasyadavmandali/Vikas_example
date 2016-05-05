@@ -1,0 +1,269 @@
+SELECT sql_id, child_number, sql_text, elapsed_time
+  FROM (SELECT sql_id,
+               child_number,
+               sql_text,
+               elapsed_time,
+               cpu_time,
+               disk_reads,
+               RANK() OVER(ORDER BY elapsed_time DESC) AS elapsed_rank
+          FROM v$sql)
+ WHERE elapsed_rank <= 10;
+
+SELECT username,
+       buffer_gets,
+       disk_reads,
+       executions,
+       buffer_get_per_exec,
+       parse_calls,
+       sorts,
+       rows_processed,
+       hit_ratio,
+       module,
+       sql_text
+       -- elapsed_time, cpu_time, user_io_wait_time, ,
+  FROM (SELECT sql_text,
+               b.username,
+               a.disk_reads,
+               a.buffer_gets,
+               trunc(a.buffer_gets / a.executions) buffer_get_per_exec,
+               a.parse_calls,
+               a.sorts,
+               a.executions,
+               a.rows_processed,
+               100 - ROUND (100 * a.disk_reads / a.buffer_gets, 2) hit_ratio,
+               module
+               -- cpu_time, elapsed_time, user_io_wait_time
+          FROM v$sqlarea a, dba_users b
+         WHERE a.parsing_user_id = b.user_id
+           AND b.username NOT IN ('SYS', 'SYSTEM', 'RMAN','SYSMAN')
+           AND a.buffer_gets > 10000
+         ORDER BY buffer_get_per_exec DESC)
+ WHERE ROWNUM <= 20
+ 
+ 
+ 
+ 
+
+Top-N queries provide a method for limiting the number of rows returned from ordered sets of data. They are extremely useful when you want to return the top or bottom "N" number of rows from a set or when you are paging through data.
+
+
+spool sqlarea.lst
+set pagesize 66 linesize 180 trimspool on
+set echo off
+column executions      heading "Execs"      format 99999999
+column rows_processed  heading "Rows Procd" format 99999999
+column loads           heading "Loads"      format 999999.99
+column buffer_gets     heading "Buffer Gets"
+column disk_reads     heading "Disk Reads"
+column elapsed_time   heading "Elasped Time" format 999999999
+column cpu_time       heading "CPU Time" format 999999999
+column sql_text        heading "SQL Text"   format a60 wrap
+column avg_cost        heading "Avg Cost"   format 99999999
+column etime_per_exec   heading "ETime Per Exec"   format 999999999
+column ctime_per_exec   heading "CPU Time Per Exec"   format 999999999
+column gets_per_exec   heading "Gets Per Exec"   format 99999999
+column reads_per_exec   heading "Read Per Exec"   format 99999999
+column rows_per_exec   heading "Rows Per Exec"   format 99999999
+
+break on report
+compute sum      of rows_processed     on report
+compute sum      of executions         on report
+compute avg      of avg_cost           on report
+compute avg      of etime_per_exec      on report
+compute avg      of ctime_per_exec      on report
+compute avg      of gets_per_exec      on report
+compute avg      of reads_per_exec      on report
+compute avg      of row_per_exec      on report
+
+PROMPT 
+PROMPT Top 10 most expensive SQL (Elapsed Time (secs) )...
+PROMPT
+select rownum as rank, a.*
+from (
+select elapsed_Time/1000000 elapsed_time, 
+executions,
+buffer_gets,
+disk_reads,
+cpu_time
+hash_value,
+sql_text
+from  v$sqlarea
+where elapsed_time/1000000 > 5
+order by elapsed_time desc) a
+where rownum < 11
+/
+
+PROMPT 
+PROMPT Top 10 most expensive SQL (Elapsed Time (secs) Per Exec )...
+PROMPT
+select rownum as rank, a.*
+from (
+select elapsed_Time/1000000 elapsed_time, 
+executions,
+elapsed_Time / (1000000 * decode(executions,0,1, executions) ) etime_per_exec,
+buffer_gets,
+disk_reads,
+cpu_time
+hash_value,
+sql_text
+from  v$sqlarea
+where elapsed_time/1000000 > 5
+order by etime_per_exec desc) a
+where rownum < 11
+/
+
+PROMPT 
+PROMPT Top 10 most expensive SQL (CPU Time (secs) )...
+PROMPT
+col SQL_TEXT for a99
+select rownum as rank, a.*
+from (
+select cpu_time/1000000 cpu_time, 
+executions,
+buffer_gets,
+disk_reads,
+cpu_time
+hash_value,
+sql_text
+from  v$sqlarea
+where cpu_time/1000000 > 5
+order by cpu_time desc) a
+where rownum < 11
+/
+
+PROMPT 
+PROMPT Top 10 most expensive SQL (CPU Time (secs) per Exec)...
+PROMPT
+select rownum as rank, a.*
+from (
+select cpu_time/1000000 cpu_time, 
+executions,
+cpu_time / (1000000 * decode(executions,0,1, executions)) ctime_per_exec,
+buffer_gets,
+disk_reads,
+cpu_time
+hash_value,
+sql_text
+from  v$sqlarea
+where cpu_time/1000000 > 5
+order by ctime_per_exec desc) a
+where rownum < 11
+/
+
+
+PROMPT 
+PROMPT Top 10 most expensive SQL (Buffer Gets)...
+PROMPT
+select rownum as rank, a.*
+from (
+select buffer_gets, 
+executions,
+buffer_gets/ decode(executions,0,1, executions) gets_per_exec,
+hash_value,
+sql_text
+from  v$sqlarea
+where buffer_gets > 50000
+order by buffer_gets desc) a
+where rownum < 11
+/
+
+PROMPT 
+PROMPT Top 10 most expensive SQL (Buffer Gets by Executions)...
+PROMPT
+select rownum as rank, a.*
+from (
+select buffer_gets, 
+executions,
+buffer_gets/ decode(executions,0,1, executions) gets_per_exec,
+hash_value,
+sql_text
+from  v$sqlarea
+where buffer_gets > 50000
+order by gets_per_exec desc) a
+where rownum < 11
+/
+
+PROMPT
+PROMPT Top 10 most expensive SQL (Physical Reads)...
+PROMPT
+select rownum as rank, a.*
+from (
+select disk_reads, 
+executions,
+disk_reads / decode(executions,0,1, executions) reads_per_exec,
+hash_value,
+sql_text
+from  v$sqlarea
+where disk_reads > 10000
+order by disk_reads desc) a
+where rownum < 11
+/
+
+PROMPT Top 10 most expensive SQL (Physical Reads by Executions)...
+PROMPT
+select rownum as rank, a.*
+from (
+select disk_reads, 
+executions,
+disk_reads / decode(executions,0,1, executions) reads_per_exec,
+hash_value,
+sql_text
+from  v$sqlarea
+where disk_reads > 10000
+order by reads_per_exec desc) a
+where rownum < 11
+/
+
+PROMPT Top 10 most expensive SQL (Rows Processed by Executions)...
+PROMPT
+select rownum as rank, a.*
+from (
+select rows_processed, 
+executions,
+rows_processed / decode(executions,0,1, executions) rows_per_exec,
+hash_value,
+sql_text
+from  v$sqlarea
+where rows_processed > 10000
+order by rows_per_exec desc) a
+where rownum < 11
+/
+
+PROMPT 
+PROMPT Top 10 most expensive SQL (Buffer Gets vs Rows Processed)...
+PROMPT
+select rownum as rank, a.*
+from (
+select buffer_gets, lpad(rows_processed ||
+decode(users_opening + users_executing, 0, ' ','*'),20) "rows_processed",
+executions, loads,
+(decode(rows_processed,0,1,1)) *
+buffer_gets/ decode(rows_processed,0,1,
+rows_processed) avg_cost,
+sql_text
+from  v$sqlarea
+where decode(rows_processed,0,1,1) * buffer_gets/ decode(rows_processed,0,1,rows_processed) > 10000
+order by 5 desc) a
+where rownum < 11
+/
+
+rem Check to see if there are any candidates for procedures or 
+rem for using bind variables. Check this by comparing UPPER 
+rem
+rem This May be a candidate application for using the init.ora parameter
+rem CURSOR_SHARING = FORCE|SIMILAR
+
+select rownum as rank, a.*
+from (
+select     upper(substr(sql_text, 1, 65)) sqltext, count(*)
+from     v$sqlarea   
+group by upper(substr(sql_text, 1, 65))
+having count(*) > 1
+order by count(*) desc) a
+where rownum < 11
+/
+prompt Output spooled to sqlarea.lst
+spool off
+ 
+ 
+ 
